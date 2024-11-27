@@ -1,0 +1,68 @@
+classDiagram
+    class Flask {
+        +route()
+        +run()
+    }
+    
+    class SocketIO {
+        +on()
+        +emit()
+        +run()
+    }
+    
+    class EmergencyDispatcher {
+        -client: OpenAI
+        -assistant_id: string
+        -thread: OpenAIThread
+        -sample_rate: int
+        -channels: int
+        -chunk_duration: float
+        -chunk_samples: int
+        -speech_threshold: int
+        -silence_duration: float
+        -min_audio_length: float
+        -speech_frames: list
+        -silence_frames: int
+        -is_recording: bool
+        -call_in_progress: bool
+        -temp_dir: string
+        -current_address: string
+        +__init__()
+        +detect_speech(audio_data)
+        +record_and_process()
+        +process_recorded_speech()
+        +text_to_speech(text)
+        +handle_input(text)
+        +run()
+        +cleanup()
+    }
+    
+    class OpenAI {
+        +api_key: string
+        +beta: OpenAIBeta
+        +audio: OpenAIAudio
+    }
+    
+    class OpenAIBeta {
+        +threads: OpenAIThreads
+    }
+    
+    class OpenAIAudio {
+        +transcriptions: Transcriptions
+        +speech: Speech
+    }
+    
+    class FlaskApp {
+        +socketio: SocketIO
+        +dispatcher: EmergencyDispatcher
+        +home()
+        +handle_start_call()
+        +handle_end_call()
+    }
+
+    EmergencyDispatcher --> OpenAI : uses
+    FlaskApp --> Flask : extends
+    FlaskApp --> SocketIO : uses
+    FlaskApp --> EmergencyDispatcher : creates
+    OpenAI --> OpenAIBeta : contains
+    OpenAI --> OpenAIAudio : contains
