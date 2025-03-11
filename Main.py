@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string
 from flask_socketio import SocketIO
 import sounddevice as sd
 import numpy as np
@@ -29,22 +29,22 @@ class EmergencyDispatcher:
     def detect_speech(self, audio_data):
         return np.abs(audio_data).mean() > self.speech_threshold
 
-    def record_and_process(self):
-        def audio_callback(indata, frames, time_info, status):
-            if status:
-                print(f"Audio status: {status}")
-            
-            if self.detect_speech(indata):
-                self.is_recording, self.silence_frames = True, 0
-                self.speech_frames.append(indata.copy())
-            elif self.is_recording:
-                self.silence_frames += 1
-                self.speech_frames.append(indata.copy())
-                if self.silence_frames * self.chunk_duration >= self.silence_duration:
-                    self.process_recorded_speech()
-                    self.is_recording, self.speech_frames, self.silence_frames = False, [], 0
+    def audio_callback(self, indata, frames, time_info, status):
+        if status:
+            print(f"Audio status: {status}")
+        
+        if self.detect_speech(indata):
+            self.is_recording, self.silence_frames = True, 0
+            self.speech_frames.append(indata.copy())
+        elif self.is_recording:
+            self.silence_frames += 1
+            self.speech_frames.append(indata.copy())
+            if self.silence_frames * self.chunk_duration >= self.silence_duration:
+                self.process_recorded_speech()
+                self.is_recording, self.speech_frames, self.silence_frames = False, [], 0
 
-        with sd.InputStream(channels=1, samplerate=self.sample_rate, blocksize=int(self.sample_rate * self.chunk_duration), callback=audio_callback, dtype=np.int16):
+    def record_and_process(self):
+        with sd.InputStream(channels=1, samplerate=self.sample_rate, blocksize=int(self.sample_rate * self.chunk_duration), callback=self.audio_callback, dtype=np.int16):
             print("Listening for speech...")
             while self.call_in_progress:
                 time.sleep(0.1)
@@ -94,7 +94,6 @@ class EmergencyDispatcher:
             socketio.emit('transcript_update', {'role': 'dispatcher', 'message': "I'm experiencing technical difficulties. Please hold.", 'timestamp': time.strftime('%H:%M:%S')})
 
     def run(self):
-        self.process_recorded_speech()
         self.record_and_process()
 
     def cleanup(self):
