@@ -9,56 +9,40 @@ from openai import OpenAI
 import wave
 import os
 import tempfile
-import re
-
-#pip install flask
-#pip install flask flask-socketio
-#pip install sounddevice
-#pip install openai
-#pip install numpy
-#pip install wave
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Your existing EmergencyDispatcher class here
 class EmergencyDispatcher:
     def __init__(self):
-        # Initialize OpenAI client
         self.client = OpenAI(api_key="Open API Key Here")
         self.assistant_id = "asst_DGcJujd3wtjBRZ4KsdrD0q5X"
         self.thread = self.client.beta.threads.create()
         
-        # Audio parameters
         self.sample_rate = 16000
         self.channels = 1
-        self.chunk_duration = 0.05  # 100ms chunks for speech detection
+        self.chunk_duration = 0.05
         self.chunk_samples = int(self.sample_rate * self.chunk_duration)
         
-        # Speech detection parameters
-        self.speech_threshold = 700  # Adjust based on your microphone
-        self.silence_duration = 1.5  # Seconds of silence to end recording
-        self.min_audio_length = 0.05  # Minimum audio length to process
+        self.speech_threshold = 700
+        self.silence_duration = 1.5
+        self.min_audio_length = 0.05
         self.speech_frames = []
         self.silence_frames = 0
         self.is_recording = False
         
-        # State management
         self.call_in_progress = True
         self.temp_dir = tempfile.mkdtemp()
         self.current_address = None
 
     def detect_speech(self, audio_data):
-        """Detect if audio contains speech using amplitude threshold."""
         return np.abs(audio_data).mean() > self.speech_threshold
 
     def record_and_process(self):
-        """Continuously record and process audio with speech detection."""
         def audio_callback(indata, frames, time_info, status):
             if status:
                 print(f"Audio status: {status}")
             
-            # Check for speech in current chunk
             if self.detect_speech(indata):
                 if not self.is_recording:
                     print("Speech detected - starting recording...")
@@ -67,11 +51,9 @@ class EmergencyDispatcher:
                 self.silence_frames = 0
             elif self.is_recording:
                 self.silence_frames += 1
-                self.speech_frames.append(indata.copy())  # Keep some silence for natural speech
+                self.speech_frames.append(indata.copy())
                 
-                # Check if silence duration exceeded
-                silence_time = self.silence_frames * self.chunk_duration
-                if silence_time >= self.silence_duration:
+                if self.silence_frames * self.chunk_duration >= self.silence_duration:
                     print("Silence detected - processing speech...")
                     self.process_recorded_speech()
                     self.is_recording = False
@@ -93,18 +75,14 @@ class EmergencyDispatcher:
             print(f"Error in audio stream: {e}")
 
     def process_recorded_speech(self):
-        """Process the recorded speech frames."""
         if not self.speech_frames:
             return
 
         try:
-            # Combine all frames
             audio_data = np.concatenate(self.speech_frames)
             duration = len(audio_data) / self.sample_rate
 
-            # Only process if audio is long enough
             if duration >= self.min_audio_length:
-                # Save to temporary WAV file
                 temp_path = os.path.join(self.temp_dir, f"speech_{time.time()}.wav")
                 with wave.open(temp_path, 'wb') as wf:
                     wf.setnchannels(self.channels)
@@ -112,7 +90,6 @@ class EmergencyDispatcher:
                     wf.setframerate(self.sample_rate)
                     wf.writeframes(audio_data.tobytes())
 
-                # Transcribe
                 with open(temp_path, 'rb') as audio_file:
                     transcript = self.client.audio.transcriptions.create(
                         model="whisper-1",
@@ -130,7 +107,6 @@ class EmergencyDispatcher:
             print(f"Error processing recorded speech: {e}")
 
     def text_to_speech(self, text):
-        """Convert text to speech using OpenAI's TTS."""
         try:
             temp_path = os.path.join(self.temp_dir, f"response_{time.time()}.mp3")
             
@@ -153,19 +129,11 @@ class EmergencyDispatcher:
             print(f"Text-to-speech error: {e}")
 
     def handle_input(self, text):
-        """Handle transcribed input and get AI response."""
         if not text:
             return
 
         try:
-            # Emit transcript update
-            socketio.emit('transcript_update', {
-                'role': 'caller',
-                'message': text,
-                'timestamp': time.strftime('%H:%M:%S')
-            })
-
-            message = self.client.beta.threads.messages.create(
+            self.client.beta.threads.messages.create(
                 thread_id=self.thread.id,
                 role="user",
                 content=text
@@ -191,14 +159,6 @@ class EmergencyDispatcher:
                         if msg.role == "assistant":
                             response = msg.content[0].text.value
                             print(f"Dispatcher: {response}")
-                            
-                            # Emit dispatcher response
-                            socketio.emit('transcript_update', {
-                                'role': 'dispatcher',
-                                'message': response,
-                                'timestamp': time.strftime('%H:%M:%S')
-                            })
-                            
                             self.text_to_speech(response)
                             return
                 time.sleep(0.5)
@@ -208,21 +168,15 @@ class EmergencyDispatcher:
             self.text_to_speech("I'm experiencing technical difficulties. Please hold.")
 
     def run(self):
-        """Main method to run the dispatcher."""
         try:
-            # Initial greeting
             self.text_to_speech("911, what's your emergency?")
-            
-            # Start recording and processing
             self.record_and_process()
-
         except KeyboardInterrupt:
             print("\nEmergency dispatcher shutting down...")
         finally:
             self.cleanup()
 
     def cleanup(self):
-        """Clean up resources."""
         self.call_in_progress = False
         try:
             for file in os.listdir(self.temp_dir):
@@ -231,7 +185,6 @@ class EmergencyDispatcher:
         except Exception as e:
             print(f"Error cleaning up: {e}")
 
-# HTML template for the frontend - optimized
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -244,9 +197,10 @@ HTML_TEMPLATE = """
     <style>
         body {
             font-family: Arial, sans-serif;
+            margin: 20px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            max-width: 1200px;
         }
         .grid {
             display: grid;
@@ -326,31 +280,6 @@ HTML_TEMPLATE = """
             50% { background-color: #ffcdd2; }
             100% { background-color: #ffebee; }
         }
-        .pulsing-marker {
-            position: relative;
-        }
-        .pulse {
-            display: block;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #ff3b30;
-            border: 2px solid #fff;
-            cursor: pointer;
-            box-shadow: 0 0 0 rgba(255, 59, 48, 0.4);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.4);
-            }
-            70% {
-                box-shadow: 0 0 0 20px rgba(255, 59, 48, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
-            }
-        }
     </style>
 </head>
 <body>
@@ -393,7 +322,6 @@ HTML_TEMPLATE = """
             key_details: new Set()
         };
         
-        // Initialize map
         function initMap() {
             map = L.map('map').setView([40.7128, -74.0060], 13);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -401,7 +329,6 @@ HTML_TEMPLATE = """
             }).addTo(map);
         }
 
-        // Address detection
         function findAddress(text) {
             const addressPatterns = [
                 /(?:at|on|near)\s+(\d+[\w\s]+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|circle|cir|court|ct|way|parkway|pkwy|terrace|terr)[\w\s,.-]*(?:,\s*[\w\s]+,\s*[A-Z]{2})?)/i,
@@ -412,25 +339,20 @@ HTML_TEMPLATE = """
             for (let pattern of addressPatterns) {
                 const match = text.match(pattern);
                 if (match) {
-                    let address = match[1].trim();
-                    if (!address.includes(',')) {
-                        address += ', New York, NY';
-                    }
-                    return address;
+                    return match[1].trim();
                 }
             }
-
             return null;
         }
 
-        // Geocoding function
         async function updateMapWithAddress(address) {
             try {
-                const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+                let response = await axios.get(`https://nominatim.openstreetmap.org/search`, {
                     params: {
                         q: address,
                         format: 'json',
-                        limit: 1
+                        limit: 1,
+                        addressdetails: 1
                     },
                     headers: {
                         'User-Agent': 'Emergency Dispatch System'
@@ -449,16 +371,7 @@ HTML_TEMPLATE = """
                             marker.remove();
                         }
                         
-                        const pulsingIcon = L.divIcon({
-                            className: 'pulsing-marker',
-                            html: '<div class="pulse"></div>',
-                            iconSize: [20, 20]
-                        });
-                        
-                        marker = L.marker([latitude, longitude], {
-                            icon: pulsingIcon
-                        }).addTo(map);
-                        
+                        marker = L.marker([latitude, longitude]).addTo(map);
                         L.circle([latitude, longitude], {
                             color: 'red',
                             fillColor: '#f03',
@@ -471,9 +384,6 @@ HTML_TEMPLATE = """
                             ${address}<br>
                             <small>Lat: ${latitude.toFixed(6)}<br>Long: ${longitude.toFixed(6)}</small>
                         `).openPopup();
-                        
-                        emergencySummary.location = address;
-                        emergencySummary.coordinates = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
                     }
                 }
             } catch (error) {
@@ -481,70 +391,33 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Emergency type detection
         function detectEmergencyType(text) {
-            const emergencyTypes = {
-                'MEDICAL': {
-                    pattern: /(heart attack|breathing|unconscious|bleeding|injury|injured|fell|fallen|seizure|stroke|choking|allergic|accident|overdose|pain|medical)/i,
-                    problems: {
-                        'CHOKING': /choking/i,
-                        'HEART_ATTACK': /heart attack/i,
-                        'BREATHING': /(?:difficulty |trouble |can't |not |heavy )breathing/i,
-                        'UNCONSCIOUS': /unconscious|passed out/i,
-                        'BLEEDING': /bleeding/i,
-                        'INJURY': /injury|injured|fell|fallen/i
-                    }
-                },
-                'FIRE': {
-                    pattern: /(fire|smoke|burning|flames|gas leak|explosion)/i,
-                    problems: {
-                        'STRUCTURE_FIRE': /building|house|apartment|structure|room on fire/i,
-                        'GAS_LEAK': /gas leak/i,
-                        'EXPLOSION': /explosion/i
-                    }
-                },
-                'POLICE': {
-                    pattern: /(break(-| )?in|robbery|theft|assault|weapon|gunshot|fight|domestic|violence|suspicious|burglary|stolen)/i,
-                    problems: {
-                        'BREAK_IN': /break(-| )?in|burglary/i,
-                        'ASSAULT': /assault|fight|violence/i,
-                        'WEAPON': /weapon|gunshot|gun|knife/i
-                    }
-                }
+            const emergencyPatterns = {
+                'MEDICAL': /(heart attack|breathing|unconscious|bleeding|injury|injured|fell|fallen|seizure|stroke|choking|allergic|accident|overdose|pain|medical)/i,
+                'FIRE': /(fire|smoke|burning|flames|gas leak|explosion)/i,
+                'POLICE': /(break(-| )?in|robbery|theft|assault|weapon|gunshot|fight|domestic|violence|suspicious|burglary|stolen)/i
             };
 
-            for (let [type, data] of Object.entries(emergencyTypes)) {
-                if (data.pattern.test(text)) {
-                    for (let [problem, pattern] of Object.entries(data.problems)) {
-                        if (pattern.test(text)) {
-                            emergencySummary.problem = problem.replace(/_/g, ' ');
-                            return type;
-                        }
-                    }
+            for (let [type, pattern] of Object.entries(emergencyPatterns)) {
+                if (pattern.test(text)) {
                     return type;
                 }
             }
             return null;
         }
 
-        // Update AI summary
         function updateAISummary(data) {
             const type = detectEmergencyType(data.message);
             if (type) emergencySummary.type = type;
             
             const address = findAddress(data.message);
-            if (address) {
-                emergencySummary.location = address;
-                updateMapWithAddress(address);
-            }
+            if (address) emergencySummary.location = address;
 
-            // Victim status detection
             const victimStatusMatch = data.message.match(/(conscious|unconscious|breathing|not breathing|responsive|unresponsive|bleeding|stable|critical|awake|alert|confused|dizzy)/i);
             if (victimStatusMatch) {
                 emergencySummary.victim_status = victimStatusMatch[0];
             }
 
-            // Key details detection
             const keyDetailPatterns = [
                 /multiple victims/i,
                 /weapon present/i,
@@ -561,7 +434,6 @@ HTML_TEMPLATE = """
                 }
             });
 
-            // Generate summary HTML
             let summaryHTML = '<div class="ai-summary">';
             if (emergencySummary.type) summaryHTML += `<strong>Type:</strong> ${emergencySummary.type}<br>`;
             if (emergencySummary.problem) summaryHTML += `<strong>Problem:</strong> ${emergencySummary.problem}<br>`;
@@ -580,7 +452,6 @@ HTML_TEMPLATE = """
             document.getElementById('aiSummary').innerHTML = summaryHTML;
         }
 
-        // Update dispatch status
         function updateDispatchStatus(text) {
             const type = detectEmergencyType(text);
             if (type && !emergencyType) {
@@ -588,21 +459,26 @@ HTML_TEMPLATE = """
             }
 
             if (emergencyType) {
-                const units = new Map([
-                    ['MEDICAL', ['🚑 Ambulance']],
-                    ['FIRE', ['🚒 Fire Engine', '🚑 Ambulance (Standby)']],
-                    ['POLICE', ['🚓 Police Units']]
-                ]);
-                
-                dispatchedUnits = new Set([...units.get(emergencyType) || []]);
-                
-                // Add specialized units based on keywords
-                if (emergencyType === 'MEDICAL' && text.match(/critical|severe|unconscious|not breathing/i)) {
-                    dispatchedUnits.add('🚁 Medical Helicopter');
-                } else if (emergencyType === 'FIRE' && text.match(/large|spreading|building|structure/i)) {
-                    dispatchedUnits.add('🚒 Additional Fire Units');
-                } else if (emergencyType === 'POLICE' && text.match(/weapon|gun|knife|violent|assault/i)) {
-                    dispatchedUnits.add('🚨 SWAT Team');
+                switch (emergencyType) {
+                    case 'MEDICAL':
+                        dispatchedUnits.add('🚑 Ambulance');
+                        if (text.match(/critical|severe|unconscious|not breathing/i)) {
+                            dispatchedUnits.add('🚁 Medical Helicopter');
+                        }
+                        break;
+                    case 'FIRE':
+                        dispatchedUnits.add('🚒 Fire Engine');
+                        dispatchedUnits.add('🚑 Ambulance (Standby)');
+                        if (text.match(/large|spreading|building|structure/i)) {
+                            dispatchedUnits.add('🚒 Additional Fire Units');
+                        }
+                        break;
+                    case 'POLICE':
+                        dispatchedUnits.add('🚓 Police Units');
+                        if (text.match(/weapon|gun|knife|violent|assault/i)) {
+                            dispatchedUnits.add('🚨 SWAT Team');
+                        }
+                        break;
                 }
 
                 const statusHTML = `
@@ -617,9 +493,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Socket event handlers
         socket.on('transcript_update', function(data) {
-            // Update transcript
             const transcript = document.getElementById('transcript');
             const message = document.createElement('div');
             message.className = 'message';
@@ -631,16 +505,20 @@ HTML_TEMPLATE = """
             transcript.appendChild(message);
             transcript.scrollTop = transcript.scrollHeight;
             
-            updateAISummary(data);
+            const address = findAddress(data.message);
+            if (address) {
+                emergencySummary.location = address;
+                updateMapWithAddress(address);
+            }
+            
             updateDispatchStatus(data.message);
+            updateAISummary(data);
         });
 
-        // Initialize everything when page loads
         window.onload = function() {
             initMap();
         };
 
-        // Emergency button handler
         document.getElementById('emergencyButton').addEventListener('click', function() {
             callActive = !callActive;
             this.textContent = callActive ? 'End Emergency Call' : 'Start Emergency Call';
@@ -649,7 +527,6 @@ HTML_TEMPLATE = """
             if (callActive) {
                 socket.emit('start_call');
                 document.getElementById('dispatchStatus').innerHTML = '<div class="status-active">Call Active - Awaiting Details</div>';
-                // Reset all tracking variables
                 emergencyType = null;
                 dispatchedUnits.clear();
                 emergencySummary = {
@@ -671,7 +548,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# Flask routes
 @app.route('/')
 def home():
     return render_template_string(HTML_TEMPLATE)
