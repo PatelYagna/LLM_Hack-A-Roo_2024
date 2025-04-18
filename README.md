@@ -1,5 +1,5 @@
 
-![PNG image](https://github.com/user-attachments/assets/3f7dfc20-8b13-49f2-a335-192db3bb7bf9)
+
 # Emergency AI 911 Dispatcher
 
 ## Authors
